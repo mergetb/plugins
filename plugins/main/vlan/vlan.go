@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"runtime"
 
 	"github.com/vishvananda/netlink"
@@ -38,6 +39,9 @@ type NetConf struct {
 	Master string `json:"master"`
 	VlanId int    `json:"vlanId"`
 	MTU    int    `json:"mtu,omitempty"`
+	MAC    string `json:"mac,omitempty"`
+
+	mac net.HardwareAddr
 }
 
 func init() {
@@ -57,6 +61,13 @@ func loadConf(bytes []byte) (*NetConf, string, error) {
 	}
 	if n.VlanId < 0 || n.VlanId > 4094 {
 		return nil, "", fmt.Errorf("invalid VLAN ID %d (must be between 0 and 4095 inclusive)", n.VlanId)
+	}
+	if n.MAC != "" {
+		mac, err := net.ParseMAC(n.MAC)
+		if err != nil {
+			return nil, "", fmt.Errorf("invalid mac: %v", err)
+		}
+		n.mac = mac
 	}
 
 	// check existing and MTU of master interface
@@ -96,10 +107,11 @@ func createVlan(conf *NetConf, ifName string, netns ns.NetNS) (*current.Interfac
 
 	v := &netlink.Vlan{
 		LinkAttrs: netlink.LinkAttrs{
-			MTU:         conf.MTU,
-			Name:        tmpName,
-			ParentIndex: m.Attrs().Index,
-			Namespace:   netlink.NsFd(int(netns.Fd())),
+			HardwareAddr: conf.mac,
+			MTU:          conf.MTU,
+			Name:         tmpName,
+			ParentIndex:  m.Attrs().Index,
+			Namespace:    netlink.NsFd(int(netns.Fd())),
 		},
 		VlanId: conf.VlanId,
 	}
